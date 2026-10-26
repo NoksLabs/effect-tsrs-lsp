@@ -36,7 +36,10 @@ project.
 
 ## Installation
 
-The extension is not in the Zed extension registry yet. Install it as a dev extension:
+Open the Extensions page in Zed (`zed: extensions`), search for **Effect tsrs**, and
+click Install.
+
+### Development build
 
 1. Install Rust with [rustup](https://rustup.rs) and add the WebAssembly target:
 

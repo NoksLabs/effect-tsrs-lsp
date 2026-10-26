@@ -1,7 +1,7 @@
-id = "effect-tsrs"
+id = "effect-tsrs-lsp"
 name = "Effect tsrs"
 description = "TypeScript language server via the Effect-patched tsrs (Rust port of TypeScript 7): full type inference plus Effect diagnostics."
-version = "0.1.1"
+version = "0.2.0"
 schema_version = 1
 authors = ["NoksLabs"]
 repository = "https://github.com/NoksLabs/effect-tsrs-zed"

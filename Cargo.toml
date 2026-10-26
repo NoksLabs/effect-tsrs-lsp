@@ -1,6 +1,6 @@
 [package]
-name = "effect-tsrs"
-version = "0.1.1"
+name = "effect-tsrs-lsp"
+version = "0.2.0"
 edition = "2024"
 description = "Zed extension that runs the Effect-patched tsrs as the TypeScript language server"
 license = "Apache-2.0"
