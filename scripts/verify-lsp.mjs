@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-// Drives the worktree's tsrs over LSP exactly as the Zed extension launches it:
-// same binary resolution, args ["--lsp", "--stdio"], cwd = worktree root, and an
-// environment without node on PATH. The probe file is sent via didOpen only and is
-// never written to disk.
+// Launches the worktree's tsrs the way the extension does (same binary resolution,
+// `--lsp --stdio`, cwd at the worktree root, no node on PATH) and checks initialize,
+// Effect diagnostics and hover. The probe file is only sent via didOpen, never written.
 //
 // Usage: node scripts/verify-lsp.mjs <worktree-root> [relative/probe/path.ts]
 
@@ -14,7 +13,7 @@ import { pathToFileURL } from "node:url";
 const root = path.resolve(process.argv[2] ?? ".");
 const probeRel = process.argv[3] ?? "src/__effect_tsrs_probe__.ts";
 
-// Mirrors find_worktree_binary in src/tsrs.rs.
+// Mirrors src/binary.rs.
 function resolveBinary() {
 	const readJson = (rel) => {
 		try {
@@ -31,10 +30,9 @@ function resolveBinary() {
 	}[process.platform];
 	const exe = process.platform === "win32" ? "tsrs.exe" : "tsrs";
 	const declared = Object.entries(readJson("node_modules/tsrs/package.json")?.optionalDependencies ?? {});
-	const packages = prefixes.flatMap((prefix) => {
-		const full = `@tsrs/${prefix}`;
-		const matches = declared.filter(([name]) => name === full || name.startsWith(`${full}-`));
-		return matches.length ? matches : [[full, undefined]];
+	const packages = prefixes.map((prefix) => {
+		const name = `@tsrs/${prefix}`;
+		return [name, declared.find(([declaredName]) => declaredName === name)?.[1]];
 	});
 	for (const [pkg, version] of packages) {
 		const dirs = [
@@ -47,7 +45,7 @@ function resolveBinary() {
 			if (readJson(`${dir}/package.json`)?.name === pkg) return `${root}/${dir}/${exe}`;
 		}
 	}
-	// Same unchecked fallback as the extension (Zed usually can't read node_modules).
+	// Unchecked fallback, as in the extension.
 	const fallback = `node_modules/@tsrs/${prefixes[0]}`;
 	const hoisted =
 		!fs.existsSync(path.join(root, "pnpm-lock.yaml")) &&
@@ -81,8 +79,7 @@ child.stdout.on("data", (chunk) => {
 		const msg = JSON.parse(buffer.subarray(headerEnd + 4, headerEnd + 4 + length).toString());
 		buffer = buffer.subarray(headerEnd + 4 + length);
 		if (msg.id !== undefined && msg.method) {
-			// Server-to-client request: answer workspace/configuration with empty settings,
-			// like the extension does when no lsp.effect-tsrs.settings are configured.
+			// Answer workspace/configuration with empty settings, as Zed does by default.
 			const result = msg.method === "workspace/configuration" ? msg.params.items.map(() => ({})) : null;
 			send({ jsonrpc: "2.0", id: msg.id, result });
 		} else if (msg.id !== undefined) {
@@ -175,8 +172,7 @@ try {
 	});
 
 	console.log(`diagnosticProvider: ${JSON.stringify(caps.diagnosticProvider)}`);
-	// Accept either model: pushed publishDiagnostics, or pulled textDocument/diagnostic.
-	// The project loads asynchronously, so retry the pull until the Effect check shows up.
+	// Accept pushed or pulled diagnostics, retrying while the project loads.
 	const hasFloating = (ds) => ds.some((d) => String(d.code) === "377001");
 	let diagnostics = [];
 	const deadline = Date.now() + 120000;

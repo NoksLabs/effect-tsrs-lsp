@@ -2,10 +2,12 @@
 name = "effect-tsrs"
 version = "0.1.1"
 edition = "2024"
+description = "Zed extension that runs the Effect-patched tsrs as the TypeScript language server"
 license = "Apache-2.0"
+repository = "https://github.com/NoksLabs/effect-tsrs-zed"
+publish = false
 
 [lib]
-path = "src/tsrs.rs"
 crate-type = ["cdylib"]
 
 [dependencies]

@@ -1,8 +1,7 @@
-effect-tsrs-zed
+Effect tsrs for Zed
 Copyright 2026 NoksLabs
 
-Portions of src/tsrs.rs (settings passthrough, platform mapping and the
-language-server command shape) are adapted from zed-effect-tsgo
-(https://github.com/RATIU5/zed-effect-tsgo), Copyright 2026 RATIU5,
-which is based on the tsgo extension, Copyright 2026 Zed Industries, Inc.
-Both are licensed under the Apache License, Version 2.0.
+The extension in src/ is adapted from zed-effect-tsgo
+(https://github.com/RATIU5/zed-effect-tsgo), Copyright 2026 RATIU5, which is
+based on the tsgo extension, Copyright 2026 Zed Industries, Inc. Both are
+licensed under the Apache License, Version 2.0.

@@ -1,84 +1,141 @@
-# effect-tsrs-zed
+# Effect tsrs for Zed
 
-Zed extension that runs the Effect-patched [tsrs](https://github.com/oxc-project/tsrs)
-(the Rust port of TypeScript 7) as the language server for TypeScript, TSX, JavaScript
-and JSX. You get full type inference (hover types, completions, go-to-definition,
-signature help, inlay hints, code actions) together with the Effect language service
-diagnostics and quick info.
+A [Zed](https://zed.dev) extension that uses the Effect-patched
+[tsrs](https://github.com/oxc-project/tsrs) (a Rust port of the TypeScript 7 compiler)
+as the language server for TypeScript, TSX, JavaScript and JSX.
 
-The extension never downloads anything. It runs the tsrs binary that your project
-already has, after `effect-tsgo patch --tsrs` has replaced it with the Effect build.
+One server provides full type information (hover, completions, go to definition,
+signature help, inlay hints, code actions) and the
+[Effect language service](https://github.com/Effect-TS/language-service): Effect
+diagnostics, quick info and refactors.
 
-## Binary resolution
+The extension does not download anything. It runs the tsrs binary installed in your
+project.
 
-1. `lsp.effect-tsrs.binary.path` from Zed settings, with `binary.arguments` (default
-   `["--lsp", "--stdio"]`) and `binary.env`.
-2. The worktree's native platform package `@tsrs/<platform>` (for example
-   `@tsrs/darwin-arm64`). It is found by reading package manifests, so node is not
-   needed. Layouts checked, in order:
-   - `node_modules/@tsrs/<platform>` (npm, yarn, bun, pnpm `node-linker=hoisted`)
-   - `node_modules/.pnpm/node_modules/@tsrs/<platform>` (pnpm virtual store)
-   - `node_modules/tsrs/node_modules/@tsrs/<platform>` (npm nested)
-   - `node_modules/.pnpm/@tsrs+<platform>@<version>/node_modules/@tsrs/<platform>`, where
-     `<version>` comes from `node_modules/tsrs/package.json`
-3. If none of those can be read, the extension uses the conventional path without
-   checking it. Zed can only read files in its worktree index, which usually leaves out
-   gitignored and symlinked `node_modules`, so in Zed this fallback is the usual case.
-   The path is `<worktree>/node_modules/.pnpm/node_modules/@tsrs/<platform>/tsrs` (pnpm's
-   version-free link), or `<worktree>/node_modules/@tsrs/<platform>/tsrs` when the
-   worktree has a `package-lock.json`, `yarn.lock` or `bun.lock` and no `pnpm-lock.yaml`.
-   If the binary is missing, Zed shows the spawn error. In that case run `pnpm install`
-   and `effect-tsgo patch --tsrs`, or set `binary.path`.
+## Project setup
 
-> **Note:** when `binary.path` is set, Zed launches that binary itself with
-> `binary.arguments`, and it may do so without asking the extension. Always set
-> `"arguments": ["--lsp", "--stdio"]` together with `path`. Without them, tsrs starts
-> as a plain compiler and Zed reports `Server reset the connection`.
+1. Install `tsrs` and `@effect/tsgo`, then patch tsrs with the Effect language service:
 
-`initialization_options` and `settings` under `lsp.effect-tsrs` are passed through to
-the server unchanged.
+   ```sh
+   pnpm add -D tsrs @effect/tsgo
+   pnpm exec effect-tsgo patch --tsrs
+   ```
 
-## Requirements
+2. Enable the plugin in `tsconfig.json`:
 
-- Rust installed with rustup, plus the `wasm32-wasip2` target:
-  `rustup target add wasm32-wasip2`. Zed must find the rustup `cargo` before any other
-  Rust install on `PATH`.
-- The project has `tsrs` installed and patched (`effect-tsgo patch --tsrs`).
-- The `@effect/language-service` plugin is listed in `tsconfig.json`. Effect
-  diagnostics only appear when the plugin option `"diagnostics"` is not `false`.
+   ```jsonc
+   {
+     "compilerOptions": {
+       "plugins": [{ "name": "@effect/language-service" }]
+     }
+   }
+   ```
 
-## Install in Zed
+   Effect diagnostics are hidden in the editor while the plugin option `"diagnostics"`
+   is `false`.
 
-1. Open the Extensions page (`zed: extensions`).
-2. Click **Install Dev Extension** (or run `zed: install dev extension`).
-3. Select this repository's directory. Zed builds it for `wasm32-wasip2` and loads it.
-4. Enable it per language in `.zed/settings.json`:
+## Installation
+
+The extension is not in the Zed extension registry yet. Install it as a dev extension:
+
+1. Install Rust with [rustup](https://rustup.rs) and add the WebAssembly target:
+
+   ```sh
+   rustup target add wasm32-wasip2
+   ```
+
+   Zed must find rustup's `cargo` before any other Rust installation on `PATH`.
+
+2. Clone this repository.
+3. In Zed, open the Extensions page and click **Install Dev Extension** (or run
+   `zed: install dev extension`), then select the cloned directory.
+
+To update later, pull the repository and click **Rebuild** on the extension.
+
+## Configuration
+
+Use `effect-tsrs` for your languages and turn off the other TypeScript servers so
+diagnostics are not duplicated:
 
 ```jsonc
+// .zed/settings.json
 {
   "languages": {
-    "TypeScript": { "language_servers": ["effect-tsrs", "!vtsls", "!typescript-language-server", "!effect-tsgo"] },
-    "TSX": { "language_servers": ["effect-tsrs", "!vtsls", "!typescript-language-server", "!effect-tsgo"] }
+    "TypeScript": {
+      "language_servers": ["effect-tsrs", "!vtsls", "!typescript-language-server", "..."]
+    },
+    "TSX": {
+      "language_servers": ["effect-tsrs", "!vtsls", "!typescript-language-server", "..."]
+    }
   }
 }
 ```
 
-To check that it started, run `dev: open language server logs` and pick `effect-tsrs`.
+`lsp.effect-tsrs.initialization_options` and `lsp.effect-tsrs.settings` are passed to the
+server unchanged.
 
-## Verifying outside Zed
+### Custom binary
 
-`scripts/verify-lsp.mjs` resolves the binary with the same rules as the extension and
-launches it the way Zed does: args `--lsp --stdio`, cwd set to the worktree root, and
-no node on `PATH`. It then checks `initialize`, the advertised capabilities, the
-diagnostics for a probe file containing a floating Effect (TS377001), and a hover. The
-probe file is sent with `didOpen` only and is never written to disk.
+To run a different binary, set its path. When you do, Zed starts the binary directly
+with `arguments`, so the arguments must be set too:
+
+```jsonc
+{
+  "lsp": {
+    "effect-tsrs": {
+      "binary": {
+        "path": "/absolute/path/to/tsrs",
+        "arguments": ["--lsp", "--stdio"]
+      }
+    }
+  }
+}
+```
+
+If the arguments are missing, tsrs runs as a plain compiler and exits, and Zed reports
+`Server reset the connection`.
+
+## How the binary is found
+
+Without `binary.path`, the extension looks for the native package `@tsrs/<platform>` (for
+example `@tsrs/darwin-arm64`) in the worktree. It reads package manifests, so node is
+not needed:
+
+- `node_modules/@tsrs/<platform>` (npm, yarn, bun, pnpm with `node-linker=hoisted`)
+- `node_modules/.pnpm/node_modules/@tsrs/<platform>` (pnpm)
+- `node_modules/tsrs/node_modules/@tsrs/<platform>` (nested npm install)
+- `node_modules/.pnpm/@tsrs+<platform>@<version>/node_modules/@tsrs/<platform>` (pnpm
+  store, with the version taken from `tsrs`'s `optionalDependencies`)
+
+Zed usually can't read gitignored or symlinked `node_modules`. When none of the
+manifests can be read, the extension uses the standard location without checking it:
+`node_modules/@tsrs/<platform>` if the worktree has a `package-lock.json`, `yarn.lock` or
+`bun.lock` and no `pnpm-lock.yaml`, and `node_modules/.pnpm/node_modules/@tsrs/<platform>`
+otherwise.
+
+## Troubleshooting
+
+- Run `dev: open language server logs` and pick `effect-tsrs` to see what the server
+  received.
+- `zed: open log` shows the command Zed tried to start and any spawn error. If the binary
+  is missing, run your package manager's install and `effect-tsgo patch --tsrs` again.
+- If hover works but no Effect diagnostics show up, check that the plugin is configured
+  and that `"diagnostics"` is not `false`.
+
+## Development
+
+`scripts/verify-lsp.mjs` checks a project without Zed. It finds the binary the same way
+the extension does, starts it with `--lsp --stdio`, and checks the server's
+capabilities, a floating-Effect diagnostic (TS377001) and a hover:
 
 ```sh
-node scripts/verify-lsp.mjs /path/to/worktree packages/foo/src/probe.ts
+node scripts/verify-lsp.mjs /path/to/project src/probe.ts
 ```
+
+The probe file is sent to the server in memory and never written to disk.
 
 ## License
 
-Apache-2.0. Parts are adapted from
-[zed-effect-tsgo](https://github.com/RATIU5/zed-effect-tsgo) and the Zed tsgo extension;
-see `LICENSE` and `NOTICE`.
+[Apache-2.0](LICENSE). Adapted from
+[zed-effect-tsgo](https://github.com/RATIU5/zed-effect-tsgo), which is based on the Zed
+tsgo extension; see [NOTICE](NOTICE).
