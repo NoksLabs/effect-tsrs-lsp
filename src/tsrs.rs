@@ -4,7 +4,6 @@
 
 use zed_extension_api::{self as zed, LanguageServerId, Result, Worktree, settings::LspSettings};
 
-const SERVER_NAME: &str = "effect-tsrs";
 const TSRS_PACKAGE: &str = "tsrs";
 const PLATFORM_SCOPE: &str = "@tsrs/";
 const DEFAULT_ARGS: [&str; 2] = ["--lsp", "--stdio"];
@@ -47,7 +46,8 @@ impl EffectTsrsExtension {
 
     /// Finds the platform package directory of the worktree's tsrs install without
     /// running node. Checks the hoisted layout (npm, yarn, bun, pnpm with
-    /// `node-linker=hoisted`), pnpm's virtual store, and npm's nested layout.
+    /// `node-linker=hoisted`), pnpm's virtual store, and npm's nested layout, then falls
+    /// back to the package manager's conventional path without checking that it exists.
     fn find_worktree_binary(worktree: &Worktree) -> Result<ResolvedBinary> {
         let (prefixes, exe_name) = Self::platform_prefixes()?;
         let tsrs_manifest = Self::read_json(worktree, "node_modules/tsrs/package.json");
@@ -79,7 +79,6 @@ impl EffectTsrsExtension {
             }
         }
 
-        let mut tried = Vec::new();
         for (package, version) in &packages {
             let mut dirs = vec![
                 format!("node_modules/{package}"),
@@ -104,22 +103,30 @@ impl EffectTsrsExtension {
                         exe_name,
                     });
                 }
-                tried.push(dir);
             }
         }
 
-        let hint = if tsrs_manifest.is_none() {
-            "tsrs is not installed in this worktree (node_modules/tsrs/package.json is missing)"
+        // Zed's read_text_file only sees files in the worktree index, which leaves out
+        // gitignored and symlinked node_modules, so the probes above usually fail in the
+        // editor. Fall back to the conventional location for the project's package manager,
+        // found from its lockfile (lockfiles are tracked, so they can be read). If the binary
+        // is not there, Zed reports the spawn error.
+        let package = format!("{PLATFORM_SCOPE}{}", prefixes[0]);
+        let hoisted_lockfiles = ["package-lock.json", "yarn.lock", "bun.lock"];
+        let uses_hoisted_layout = worktree.read_text_file("pnpm-lock.yaml").is_err()
+            && hoisted_lockfiles
+                .iter()
+                .any(|lockfile| worktree.read_text_file(lockfile).is_ok());
+        let package_dir = if uses_hoisted_layout {
+            format!("node_modules/{package}")
         } else {
-            "tsrs is installed but its native platform package is missing"
+            // pnpm's version-free link into the virtual store.
+            format!("node_modules/.pnpm/node_modules/{package}")
         };
-        Err(format!(
-            "{SERVER_NAME}: {hint}. Run `pnpm install` and then `effect-tsgo patch --tsrs` in {root}, \
-             or set lsp.{SERVER_NAME}.binary.path (with binary.arguments [\"--lsp\", \"--stdio\"]) in Zed settings. \
-             Looked in: {tried}",
-            root = worktree.root_path(),
-            tried = tried.join(", "),
-        ))
+        Ok(ResolvedBinary {
+            package_dir,
+            exe_name,
+        })
     }
 
     fn join(root: &str, relative: &str) -> String {

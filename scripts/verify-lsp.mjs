@@ -47,7 +47,12 @@ function resolveBinary() {
 			if (readJson(`${dir}/package.json`)?.name === pkg) return `${root}/${dir}/${exe}`;
 		}
 	}
-	throw new Error("no tsrs platform package found");
+	// Same unchecked fallback as the extension (Zed usually can't read node_modules).
+	const fallback = `node_modules/@tsrs/${prefixes[0]}`;
+	const hoisted =
+		!fs.existsSync(path.join(root, "pnpm-lock.yaml")) &&
+		["package-lock.json", "yarn.lock", "bun.lock"].some((f) => fs.existsSync(path.join(root, f)));
+	return `${root}/${hoisted ? fallback : `node_modules/.pnpm/${fallback.slice("node_modules/".length)}`}/${exe}`;
 }
 
 const binary = resolveBinary();

@@ -21,8 +21,14 @@ already has, after `effect-tsgo patch --tsrs` has replaced it with the Effect bu
    - `node_modules/tsrs/node_modules/@tsrs/<platform>` (npm nested)
    - `node_modules/.pnpm/@tsrs+<platform>@<version>/node_modules/@tsrs/<platform>`, where
      `<version>` comes from `node_modules/tsrs/package.json`
-3. Otherwise the server fails to start, with an error that says to run `pnpm install`
-   and `effect-tsgo patch --tsrs`.
+3. If none of those can be read, the extension uses the conventional path without
+   checking it. Zed can only read files in its worktree index, which usually leaves out
+   gitignored and symlinked `node_modules`, so in Zed this fallback is the usual case.
+   The path is `<worktree>/node_modules/.pnpm/node_modules/@tsrs/<platform>/tsrs` (pnpm's
+   version-free link), or `<worktree>/node_modules/@tsrs/<platform>/tsrs` when the
+   worktree has a `package-lock.json`, `yarn.lock` or `bun.lock` and no `pnpm-lock.yaml`.
+   If the binary is missing, Zed shows the spawn error. In that case run `pnpm install`
+   and `effect-tsgo patch --tsrs`, or set `binary.path`.
 
 > **Note:** when `binary.path` is set, Zed launches that binary itself with
 > `binary.arguments`, and it may do so without asking the extension. Always set
