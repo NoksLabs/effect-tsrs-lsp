@@ -1,0 +1,12 @@
+[package]
+name = "effect-tsrs"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[lib]
+path = "src/tsrs.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.7.0"
