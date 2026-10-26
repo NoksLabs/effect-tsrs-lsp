@@ -3,17 +3,28 @@
 // `--lsp --stdio`, cwd at the worktree root, no node on PATH) and checks initialize,
 // Effect diagnostics and hover. The probe file is only sent via didOpen, never written.
 //
-// Usage: node scripts/verify-lsp.mjs <worktree-root> [relative/probe/path.ts]
+// Usage: node scripts/verify-lsp.mjs <worktree-root> [relative/probe/path.ts] [--node]
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const root = path.resolve(process.argv[2] ?? ".");
-const probeRel = process.argv[3] ?? "src/__effect_tsrs_probe__.ts";
+const probeRel = process.argv.slice(3).find((arg) => !arg.startsWith("--")) ?? "src/__effect_tsrs_probe__.ts";
 
-// Mirrors src/binary.rs.
+// Mirrors src/binary.rs, running its RESOLVE_SCRIPT verbatim. Pass --node to skip the
+// manifest reads, as when Zed hasn't indexed node_modules.
+function resolveWithNode(bundle) {
+	const source = fs.readFileSync(new URL("../src/binary.rs", import.meta.url), "utf8");
+	const script = /RESOLVE_SCRIPT: &str = r#"([\s\S]*?)"#;/.exec(source)[1];
+	try {
+		return execFileSync(process.execPath, ["-e", script, root, bundle], { encoding: "utf8" }) || undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 function resolveBinary() {
 	const readJson = (rel) => {
 		try {
@@ -28,29 +39,47 @@ function resolveBinary() {
 		linux: [`linux-${arch}-gnu`, `linux-${arch}-musl`],
 		win32: [`win32-${arch}`],
 	}[process.platform];
+	const bundle = { "darwin-arm64": 1, "linux-x64": 1, "linux-arm64": 1 }[`${process.platform}-${arch}`]
+		? `@effect/tsgo-${process.platform}-${arch}`
+		: undefined;
 	const exe = process.platform === "win32" ? "tsrs.exe" : "tsrs";
-	const declared = Object.entries(readJson("node_modules/tsrs/package.json")?.optionalDependencies ?? {});
-	const packages = prefixes.map((prefix) => {
-		const name = `@tsrs/${prefix}`;
-		return [name, declared.find(([declaredName]) => declaredName === name)?.[1]];
-	});
-	for (const [pkg, version] of packages) {
-		const dirs = [
-			`node_modules/${pkg}`,
-			`node_modules/.pnpm/node_modules/${pkg}`,
-			`node_modules/tsrs/node_modules/${pkg}`,
-		];
+	const optional = (rel) => Object.entries(readJson(rel)?.optionalDependencies ?? {});
+	const findPackage = (pkg, nested, version) => {
+		const dirs = [`node_modules/${pkg}`, `node_modules/.pnpm/node_modules/${pkg}`, nested];
 		if (version) dirs.push(`node_modules/.pnpm/${pkg.replace("/", "+")}@${version}/node_modules/${pkg}`);
-		for (const dir of dirs) {
-			if (readJson(`${dir}/package.json`)?.name === pkg) return `${root}/${dir}/${exe}`;
+		return dirs.find((dir) => readJson(`${dir}/package.json`)?.name === pkg);
+	};
+	const binary = (rel) => `${root}/${rel}`;
+	if (bundle && process.argv.includes("--node")) return resolveWithNode(bundle);
+
+	if (bundle) {
+		const version = optional("node_modules/@effect/tsgo/package.json").find(([name]) => name === bundle)?.[1];
+		const dir = findPackage(bundle, `node_modules/@effect/tsgo/node_modules/${bundle}`, version);
+		const upstream = dir && readJson(`${dir}/lib/upstream.json`);
+		if (upstream) {
+			const installed = readJson("node_modules/tsrs/package.json")?.version;
+			const tsrs = upstream.components?.tsrs?.[installed] ? installed : upstream.tags?.tsrs?.latest;
+			if (tsrs) return binary(`${dir}/artifacts/tsrs/${tsrs}/tsrs`);
 		}
+	}
+	const declared = optional("node_modules/tsrs/package.json");
+	for (const prefix of prefixes) {
+		const pkg = `@tsrs/${prefix}`;
+		const version = declared.find(([name]) => name === pkg)?.[1];
+		const dir = findPackage(pkg, `node_modules/tsrs/node_modules/${pkg}`, version);
+		if (dir) return binary(`${dir}/${exe}`);
+	}
+	const manifest = readJson("package.json");
+	if (bundle && (manifest?.dependencies?.["@effect/tsgo"] || manifest?.devDependencies?.["@effect/tsgo"])) {
+		const resolved = resolveWithNode(bundle);
+		if (resolved) return resolved;
 	}
 	// Unchecked fallback, as in the extension.
 	const fallback = `node_modules/@tsrs/${prefixes[0]}`;
 	const hoisted =
 		!fs.existsSync(path.join(root, "pnpm-lock.yaml")) &&
 		["package-lock.json", "yarn.lock", "bun.lock"].some((f) => fs.existsSync(path.join(root, f)));
-	return `${root}/${hoisted ? fallback : `node_modules/.pnpm/${fallback.slice("node_modules/".length)}`}/${exe}`;
+	return binary(`${hoisted ? fallback : `node_modules/.pnpm/${fallback.slice("node_modules/".length)}`}/${exe}`);
 }
 
 const binary = resolveBinary();
