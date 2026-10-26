@@ -9,12 +9,21 @@ signature help, inlay hints, code actions) and the
 [Effect language service](https://github.com/Effect-TS/language-service): Effect
 diagnostics, quick info and refactors.
 
-The extension does not download anything. It runs the tsrs binary installed in your
-project.
+The extension does not download anything. It runs the Effect-patched tsrs that
+`@effect/tsgo` installs in your project.
 
 ## Project setup
 
-1. Install `tsrs` and `@effect/tsgo`, then patch tsrs with the Effect language service:
+1. Install `@effect/tsgo` 0.59 or later:
+
+   ```sh
+   pnpm add -D @effect/tsgo
+   ```
+
+   It ships a ready-built, Effect-patched tsrs for macOS arm64 and Linux x64/arm64
+   (glibc). No `tsrs` package and no patch step are needed.
+
+   On other platforms, install `tsrs` and patch it instead:
 
    ```sh
    pnpm add -D tsrs @effect/tsgo
@@ -79,7 +88,8 @@ server unchanged.
 
 ### Custom binary
 
-To run a different binary, set its path. When you do, Zed starts the binary directly
+This is optional; the extension finds the binary on its own. To run a different binary,
+set its path. When you do, Zed starts the binary directly
 with `arguments`, so the arguments must be set too:
 
 ```jsonc
@@ -100,28 +110,38 @@ If the arguments are missing, tsrs runs as a plain compiler and exits, and Zed r
 
 ## How the binary is found
 
-Without `binary.path`, the extension looks for the native package `@tsrs/<platform>` (for
-example `@tsrs/darwin-arm64`) in the worktree. It reads package manifests, so node is
-not needed:
+Without `binary.path`, the extension tries, in order:
 
-- `node_modules/@tsrs/<platform>` (npm, yarn, bun, pnpm with `node-linker=hoisted`)
-- `node_modules/.pnpm/node_modules/@tsrs/<platform>` (pnpm)
-- `node_modules/tsrs/node_modules/@tsrs/<platform>` (nested npm install)
-- `node_modules/.pnpm/@tsrs+<platform>@<version>/node_modules/@tsrs/<platform>` (pnpm
-  store, with the version taken from `tsrs`'s `optionalDependencies`)
+1. The tsrs bundled in `@effect/tsgo-<platform>`, at
+   `artifacts/tsrs/<version>/tsrs`. Like `effect-tsgo tsrs`, it picks the build matching
+   the installed `tsrs` package if one is bundled, and the latest otherwise.
+2. A patched `@tsrs/<platform>` package (for example `@tsrs/darwin-arm64`).
+3. The bundled tsrs again, located by running Zed's node once, if the worktree's
+   `package.json` depends on `@effect/tsgo`.
+4. The standard `@tsrs/<platform>` location, unchecked.
 
-Zed usually can't read gitignored or symlinked `node_modules`. When none of the
-manifests can be read, the extension uses the standard location without checking it:
-`node_modules/@tsrs/<platform>` if the worktree has a `package-lock.json`, `yarn.lock` or
-`bun.lock` and no `pnpm-lock.yaml`, and `node_modules/.pnpm/node_modules/@tsrs/<platform>`
-otherwise.
+Steps 1 and 2 read package manifests, so node is not needed. They look in:
+
+- `node_modules/<package>` (npm, yarn, bun, pnpm with `node-linker=hoisted`)
+- `node_modules/.pnpm/node_modules/<package>` (pnpm)
+- `node_modules/@effect/tsgo/node_modules/<package>` or
+  `node_modules/tsrs/node_modules/<package>` (nested npm install)
+- `node_modules/.pnpm/<scope>+<name>@<version>/node_modules/<package>` (pnpm store, with
+  the version taken from the parent package's `optionalDependencies`)
+
+Zed usually can't read gitignored or symlinked `node_modules`, which is what step 3
+covers. Node only runs for the lookup, which takes a few tens of milliseconds; the server
+runs without it. Step 4 uses `node_modules/@tsrs/<platform>` if the worktree has a
+`package-lock.json`, `yarn.lock` or `bun.lock` and no `pnpm-lock.yaml`, and
+`node_modules/.pnpm/node_modules/@tsrs/<platform>` otherwise.
 
 ## Troubleshooting
 
 - Run `dev: open language server logs` and pick `effect-tsrs` to see what the server
   received.
 - `zed: open log` shows the command Zed tried to start and any spawn error. If the binary
-  is missing, run your package manager's install and `effect-tsgo patch --tsrs` again.
+  is missing, run your package manager's install (and `effect-tsgo patch --tsrs` again if
+  you use a patched `tsrs`).
 - If hover works but no Effect diagnostics show up, check that the plugin is configured
   and that `"diagnostics"` is not `false`.
 
@@ -134,6 +154,9 @@ capabilities, a floating-Effect diagnostic (TS377001) and a hover:
 ```sh
 node scripts/verify-lsp.mjs /path/to/project src/probe.ts
 ```
+
+Add `--node` to skip the manifest reads and test the node lookup, as when Zed hasn't
+indexed `node_modules`.
 
 The probe file is sent to the server in memory and never written to disk.
 

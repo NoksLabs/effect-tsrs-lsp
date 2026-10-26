@@ -1,7 +1,7 @@
 id = "effect-tsrs-lsp"
 name = "Effect tsrs"
 description = "TypeScript language server via the Effect-patched tsrs (Rust port of TypeScript 7): full type inference plus Effect diagnostics."
-version = "0.2.0"
+version = "0.3.0"
 schema_version = 1
 authors = ["NoksLabs"]
 repository = "https://github.com/NoksLabs/effect-tsrs-lsp"
@@ -11,3 +11,10 @@ name = "effect-tsrs"
 # tsrs picks the script kind from the LSP languageId sent in textDocument/didOpen.
 language_ids = { TypeScript = "typescript", TSX = "typescriptreact", JavaScript = "javascript", JSX = "javascriptreact" }
 languages = ["TypeScript", "TSX", "JavaScript", "JSX"]
+
+# Runs Zed's node once to locate the tsrs bundled in @effect/tsgo when node_modules isn't
+# indexed. The language server itself runs without node.
+[[capabilities]]
+kind = "process:exec"
+command = "*"
+args = ["-e", "**"]
