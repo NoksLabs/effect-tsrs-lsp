@@ -4,7 +4,7 @@ description = "TypeScript language server via the Effect-patched tsrs (Rust port
 version = "0.2.0"
 schema_version = 1
 authors = ["NoksLabs"]
-repository = "https://github.com/NoksLabs/effect-tsrs-zed"
+repository = "https://github.com/NoksLabs/effect-tsrs-lsp"
 
 [language_servers.effect-tsrs]
 name = "effect-tsrs"
